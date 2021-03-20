@@ -8,7 +8,6 @@ runtime: shiny
 <style>
   .main-container {max-width: 65%;}
   .row {overflow: auto;}
-  .selectize-input {width: 500px}
 </style>
 <hr/>
 ```{r setup, include=FALSE}
@@ -153,14 +152,18 @@ shinyApp(
 ## TODO Title
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 ui2 = fluidPage(
-  inputPanel(
-    textInput(
+  sidebarLayout(
+    mainPanel(
+      plotOutput(outputId = 'crimeHist')
+    ),
+    sidebarPanel(
+      textInput(
       'searchCrime',
       'Search:'
-    ),
-    uiOutput('chooseCrime')
-  ),
-  plotOutput(outputId = 'crimeHist')
+      ),
+      uiOutput('chooseCrime')
+    )
+  )
 )
 
 server2 = function(input, output, session) {
@@ -203,7 +206,7 @@ server2 = function(input, output, session) {
   })
   
   output$crimeHist = renderPlot({
-    ggplot(data = dataObj()) + geom_bar(mapping = aes(fill = district, x = factor(reported_year))) + xlab('Year of Report') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District')
+    ggplot(data = dataObj()) + geom_bar(mapping = aes(fill = district, x = factor(reported_year))) + xlab('Year') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District')
   })
 }
 
