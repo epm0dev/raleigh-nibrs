@@ -161,7 +161,13 @@ ui2 = fluidPage(
       'searchCrime',
       'Search:'
       ),
-      uiOutput('chooseCrime')
+      uiOutput('chooseCrime'),
+      selectInput(
+        'xAxis',
+        label = 'Time Frame:',
+        choices = c('Day of Week', 'Month', 'Year'),
+        selected = 'Year'
+      )
     )
   )
 )
@@ -205,8 +211,27 @@ server2 = function(input, output, session) {
     )
   })
   
+  listener = reactive({
+    list(input$chooseCrime, input$xAxis)
+  })
+  
+  re = eventReactive(
+    listener(),
+    {
+      if (input$xAxis == 'Day of Week') {
+        ggplot(data = dataObj()) + geom_bar(mapping = aes(x = reported_dayofwk, fill = district)) + xlab('Day of Week') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District') + ggtitle('TODO Plot Title')
+      }
+      else if (input$xAxis == 'Month') {
+        ggplot(data = dataObj()) + geom_bar(mapping = aes(x = factor(reported_month), fill = district)) + xlab('Month') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District') + ggtitle('TODO Plot Title')
+      }
+      else if (input$xAxis == 'Year') {
+        ggplot(data = dataObj()) + geom_bar(mapping = aes(fill = district, x = factor(reported_year))) + xlab('Year') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District') + ggtitle('TODO Plot Title')
+      }
+    }
+  )
+  
   output$crimeHist = renderPlot({
-    ggplot(data = dataObj()) + geom_bar(mapping = aes(fill = district, x = factor(reported_year))) + xlab('Year') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District')
+    re()
   })
 }
 
