@@ -1,0 +1,138 @@
+---
+title: "Raleigh NIBRS Police Data Set Analyses"
+output:
+  html_document:
+    toc: true
+runtime: shiny
+---
+<style>
+  .main-container {
+    max-width: 65%;
+  }
+</style>
+<hr/>
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Import and Prepare Dataset
+```{r message=FALSE, warning=FALSE}
+# Import required packages
+library('tidyverse')
+library('shiny')
+library('DT')
+
+
+# Import data
+policeFile = './data/Raleigh_Police_Incidents_(NIBRS).csv'
+police = read_csv(policeFile)
+
+# Drop unneeded features
+police = police %>% select(-GlobalID, -case_number, -agency, -OBJECTID, -X, -Y, -city, -reported_block_address, -city_of_incident)
+
+# Replace NA crime types with 'Other' and change capitalization of non-NA crime types
+police = police %>% mutate(
+  crime_type = ifelse(
+    is.na(crime_type),
+    'Other',
+    ifelse(
+      crime_type == 'CRIMES AGAINST PERSONS',
+      'Crimes Against Persons',
+      ifelse(
+        crime_type == 'CRIMES AGAINST PROPERTY',
+        'Crimes Against Property',
+        ifelse(
+          crime_type == 'CRIMES AGAINST SOCIETY',
+          'Crimes Against Society',
+          'Other'
+        )
+      )
+    )
+  )
+)
+
+# Rename crime_description column
+police = police %>% rename(Crime = crime_description)
+
+# Filter observations to only include crimes with known district
+police = police %>% filter(district != 'UNK')
+
+# Count number of crimes in different districts to get a list of districts
+districts = police %>% count(district)
+
+# Count individual crimes to get a list of crimes sorted alphabetically
+indivCrimes = police %>% count(Crime) %>% arrange(Crime)
+
+# Create a factor for the days of the week to aid in sorting
+police$reported_dayofwk = factor(police$reported_dayofwk, levels = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))
+```
+
+# Data Analyses
+Text
+
+## TODO Title
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ui = fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      selectInput(
+        'crimeType',
+        label = 'Type of Crime:',
+        choices = c('Crimes Against Persons', 'Crimes Against Property', 'Crimes Against Society', 'Other')
+      ),
+      sliderInput(
+        'year',
+        label = 'Year:',
+        min = 2014,
+        max = 2021,
+        value = 2021,
+        step = 1,
+        sep = ''
+      )
+    ),
+    mainPanel(
+      plotOutput('mainPlot')
+    )
+  ),
+  DT::dataTableOutput('crimeDescTable')
+)
+
+server = function(input, output, session) {
+  dataObj = reactive({
+    it = police %>% filter(crime_type == input$crimeType, reported_year == input$year)
+    
+    return(it)
+  })
+  
+  output$mainPlot = renderPlot({
+    ggplot(data = dataObj()) + geom_bar(mapping = aes(x = reported_dayofwk, fill = district, position = 'stack')) + xlab('Day of Week of Report') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District')
+  })
+  
+  crimeDataObj = reactive({
+    it = dataObj() %>% count(Crime) %>% arrange(-n) %>% rename('Number Reported' = n)
+    
+    return(it)
+  })
+  
+  output$crimeDescTable = DT::renderDataTable({
+    crimeDataObj()
+  })
+}
+
+shinyApp(
+  ui,
+  server,
+  options = list(
+    height = 5000
+  )
+)
+```
+
+## TODO Title
+
+
+
+
+
+
+
