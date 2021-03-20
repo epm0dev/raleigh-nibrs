@@ -1,0 +1,248 @@
+---
+title: "Raleigh Police Incidents (NIBRS) Dataset Analyses"
+output: html_document
+#output:
+#  ioslides_presentation:
+#    widescreen: true
+#    smaller: true
+runtime: shiny
+---
+<style>
+  .main-container {
+    max-width: 65%;
+  }
+</style>
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import Dataset and Drop Unneeded Features
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library('tidyverse')
+library('shiny')
+library('DT')
+
+
+# Import data
+policeFile = './data/Raleigh_Police_Incidents_(NIBRS).csv'
+police = read_csv(policeFile)
+
+# Drop unneeded features
+police = police %>% select(-GlobalID, -case_number, -agency, -OBJECTID, -X, -Y, -city, -reported_block_address, -city_of_incident)
+
+# Replace NA crime types with 'Other' and change capitalization of non-NA crime types
+police = police %>% mutate(
+  crime_type = ifelse(
+    is.na(crime_type),
+    'Other',
+    ifelse(
+      crime_type == 'CRIMES AGAINST PERSONS',
+      'Crimes Against Persons',
+      ifelse(
+        crime_type == 'CRIMES AGAINST PROPERTY',
+        'Crimes Against Property',
+        ifelse(
+          crime_type == 'CRIMES AGAINST SOCIETY',
+          'Crimes Against Society',
+          'Other'
+        )
+      )
+    )
+  )
+)
+
+# Rename crime_description column
+police = police %>% rename(Crime = crime_description)
+
+# Filter observations to only include crimes with known district
+police = police %>% filter(district != 'UNK')
+
+# Count number of crimes in different districts to get a list of districts
+districts = police %>% count(district)
+
+# Count individual crimes to get a list of crimes sorted alphabetically
+indivCrimes = police %>% count(Crime) %>% arrange(Crime)
+```
+```{r echo=FALSE}
+ui = fluidPage(
+  verticalLayout(
+    h2('Analyze Reported Crimes per Police District'),
+    sidebarLayout(
+      sidebarPanel(
+        selectInput(
+          'selectedDistrict',
+          label = 'Police District:',
+          choices = districts$district,
+          selected = 'Downtown'
+        ),
+        checkboxInput(
+          'includeMisc',
+          'Include Miscellaneous Crimes',
+          FALSE
+        ),
+        sliderInput(
+          'minYear',
+          label = 'Starting Year',
+          min = min(police$reported_year),
+          max = max(police$reported_year),
+          value = min(police$reported_year),
+          step = 1,
+          sep = ''
+        ),
+        sliderInput(
+          'maxYear',
+          label = 'Ending Year',
+          min = min(police$reported_year),
+          max = max(police$reported_year),
+          value = max(police$reported_year),
+          step = 1,
+          sep = ''
+        )
+      ),
+      mainPanel(
+        plotOutput(outputId = 'crimeTypeHist')
+      )
+    ),
+    fluidRow(
+      selectInput(
+        'crimeType',
+        label = 'Type of Crime:',
+        choices = c('Crimes Against Persons', 'Crimes Against Property', 'Crimes Against Society', 'Other')
+      )
+    ),
+    fluidRow(
+      DT::dataTableOutput(outputId = 'crimeDescTable')
+    ),
+    h2('Analyze Individual Crimes'),
+    sidebarLayout(
+      mainPanel(
+        plotOutput(outputId = 'crimeDistrictHist')
+      ),
+      sidebarPanel(
+        textInput(
+          'searchCrime',
+          'Search:'
+        ),
+        uiOutput('chooseCrime'),
+        sliderInput(
+          'minCrimeYear',
+          label = 'Starting Year',
+          min = min(police$reported_year),
+          max = max(police$reported_year),
+          value = min(police$reported_year),
+          step = 1,
+          sep = ''
+        ),
+        sliderInput(
+          'maxCrimeYear',
+          label = 'Ending Year',
+          min = min(police$reported_year),
+          max = max(police$reported_year),
+          value = max(police$reported_year),
+          step = 1,
+          sep = ''
+        )
+      )
+    ),
+    plotOutput('crimeDayHist')
+  )
+)
+
+server <- function(input, output, session) {
+  districtData = reactive({
+    dataObj = police %>% filter(district == input$selectedDistrict, reported_year >= input$minYear, reported_year <= input$maxYear)
+    
+    if (!input$includeMisc) {
+      dataObj = dataObj %>% filter(crime_type != 'Other')
+    }
+    
+    return(dataObj)
+  })
+  
+  output$crimeTypeHist = renderPlot({
+    ggplot(data = districtData()) + geom_bar(mapping = aes(fill = factor(reported_year), x = crime_type), position = 'dodge') + xlab('Type of Crime') + ylab('Number of Crimes Reported') + ggtitle(paste0('# of Crimes Reported in ', input$selectedDistrict, ' Raleigh by Type of Crime')) + scale_fill_discrete(name = 'Year of Report')
+  })
+  
+  crimeTypes = reactive({
+    dataObj = districtData() %>% filter(crime_type == input$crimeType) %>% count(Crime) %>% arrange(-n)
+    dataObj = dataObj %>% rename('Number Reported' = n)
+    return(dataObj)
+  })
+  
+  output$crimeDescTable = DT::renderDataTable({
+    crimeTypes()
+  })
+  
+  observeEvent(
+    input$includeMisc,
+    {
+      if (input$includeMisc) {
+        updateSelectInput(
+          session,
+          'crimeType',
+          choices = c('Crimes Against Persons', 'Crimes Against Property', 'Crimes Against Society', 'Other')
+        )
+      }
+      else {
+        updateSelectInput(
+          session,
+          'crimeType',
+          choices = c('Crimes Against Persons', 'Crimes Against Property', 'Crimes Against Society', 'Other')
+        )
+      }
+    }
+  )
+  
+  filteredCrimes = reactive({
+    idxs = mapply(
+      grepl,
+      input$searchCrime,
+      list(indivCrimes$Crime),
+      ignore.case = TRUE,
+      SIMPLIFY = FALSE
+    )
+    indivCrimes$Crime[idxs[[1]]]
+  })
+  
+  output$chooseCrime = renderUI({
+    selectInput(
+      'chooseCrime',
+      'Crime:',
+      choices = filteredCrimes()
+    )
+  })
+  
+  observeEvent(
+    input$searchCrime,
+    {
+      updateSelectInput(
+        session,
+        'chooseCrime',
+        choices = filteredCrimes()
+      )
+    }
+  )
+  
+  crimeData = reactive({
+    dataObj = police %>% filter(Crime == input$chooseCrime, reported_year >= input$minCrimeYear, reported_year <= input$maxCrimeYear)
+    
+    return(dataObj)
+  })
+  
+  output$crimeDistrictHist = renderPlot({
+    ggplot(data = crimeData()) + geom_bar(mapping = aes(fill = district, x = factor(reported_year), position = 'stack')) + xlab('Year of Report') + ylab('Number of Crimes Reported') + ggtitle(paste0('# of "', input$chooseCrime, '" Crimes Reported by Year and District')) + scale_fill_discrete(name = 'District')
+  })
+  
+  output$crimeDayHist = renderPlot({
+    ggplot(data = crimeData()) + geom_bar(mapping = aes(fill = factor(reported_dayofwk), x = factor(reported_year), position = 'stack')) + xlab('Year of Report') + ylab('Number of Crimes Reported') + ggtitle(paste0('# of "', input$chooseCrime, '" Crimes Reported by Year and Day of Week')) + scale_fill_discrete(name = 'Day Of Week')
+  })
+}
+
+shinyApp(
+  ui = ui,
+  server = server,
+  options = list(
+    height = 1950
+  )
+)
+```
