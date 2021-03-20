@@ -6,9 +6,9 @@ output:
 runtime: shiny
 ---
 <style>
-  .main-container {
-    max-width: 65%;
-  }
+  .main-container {max-width: 65%;}
+  .row {overflow: auto;}
+  .selectize-input {width: 500px}
 </style>
 <hr/>
 ```{r setup, include=FALSE}
@@ -80,6 +80,12 @@ ui = fluidPage(
         label = 'Type of Crime:',
         choices = c('Crimes Against Persons', 'Crimes Against Property', 'Crimes Against Society', 'Other')
       ),
+      selectInput(
+        'xAxis',
+        label = 'Time Frame:',
+        choices = c('Day of Week', 'Month'),
+        selected = 'Day of Week'
+      ),
       sliderInput(
         'year',
         label = 'Year:',
@@ -104,8 +110,24 @@ server = function(input, output, session) {
     return(it)
   })
   
+  listener = reactive({
+    list(input$crimeType, input$xAxis, input$year)
+  })
+  
+  re = eventReactive(
+    listener(),
+    {
+      if (input$xAxis == 'Day of Week') {
+        ggplot(data = dataObj()) + geom_bar(mapping = aes(x = reported_dayofwk, fill = district)) + xlab('Day of Week') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District') + ggtitle('TODO Plot Title')
+      }
+      else if (input$xAxis == 'Month') {
+        ggplot(data = dataObj()) + geom_bar(mapping = aes(x = factor(reported_month), fill = district)) + xlab('Month') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District') + ggtitle('TODO Plot Title')
+      }
+    }
+  )
+  
   output$mainPlot = renderPlot({
-    ggplot(data = dataObj()) + geom_bar(mapping = aes(x = reported_dayofwk, fill = district, position = 'stack')) + xlab('Day of Week of Report') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District')
+    re()
   })
   
   crimeDataObj = reactive({
@@ -123,12 +145,76 @@ shinyApp(
   ui,
   server,
   options = list(
-    height = 5000
+    height = '870'
   )
 )
 ```
 
 ## TODO Title
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ui2 = fluidPage(
+  inputPanel(
+    textInput(
+      'searchCrime',
+      'Search:'
+    ),
+    uiOutput('chooseCrime')
+  ),
+  plotOutput(outputId = 'crimeHist')
+)
+
+server2 = function(input, output, session) {
+  dataObj = reactive({
+    if (length(input$chooseCrime) == 0) {return(NA)}
+    
+    it = police %>% filter(Crime == input$chooseCrime)
+    return(it)
+  })
+  
+  filteredCrimes = reactive({
+    idxs = mapply(
+      grepl,
+      input$searchCrime,
+      list(indivCrimes$Crime),
+      ignore.case = TRUE,
+      SIMPLIFY = FALSE
+    )
+    indivCrimes$Crime[idxs[[1]]]
+  })
+  
+  observeEvent(
+    input$searchCrime,
+    {
+      updateSelectInput(
+        session,
+        'chooseCrime',
+        choices = filteredCrimes()
+      )
+    }
+  )
+  
+  output$chooseCrime = renderUI({
+    selectInput(
+      'chooseCrime',
+      'Crime:',
+      choices = filteredCrimes(),
+      width = 500
+    )
+  })
+  
+  output$crimeHist = renderPlot({
+    ggplot(data = dataObj()) + geom_bar(mapping = aes(fill = district, x = factor(reported_year))) + xlab('Year of Report') + ylab('Number of Crimes Reported') + scale_fill_discrete(name = 'District')
+  })
+}
+
+shinyApp(
+  ui2,
+  server2,
+  options = list(
+    height = 600
+  )
+)
+```
 
 
 
